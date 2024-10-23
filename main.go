@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"example.com/pablo-emulator/simpleEmulator"
+	"github.com/latvas/simple-x86-emulator/simpleEmulator"
 )
 
 func main() {
