@@ -1,7 +1,6 @@
 package simpleEmulator
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,19 +21,28 @@ type emulator struct {
 	memoryEnd uint
 }
 
-// newEmulator creates a new Emulator instance
+// newEmulator creates a new Emulator instance with registers and flags initialized
 func newEmulator() *emulator {
 	return &emulator{
+		// Initializing registers to 0
 		registers: map[string]int{
 			"rax": 0, "rbx": 0, "rcx": 0, "rdx": 0,
 		},
+		// Initializing flags to false
+		flags: map[string]bool{
+			"ZF": false, // Zero Flag
+			"SF": false, // Sign Flag
+			"CF": false, // Carry Flag
+			"OF": false, // Overflow Flag
+		},
 		memory:    make(map[int]instruction),
 		program:   make(map[int]string),
-		pc:        0,
-		memoryEnd: 0,
+		pc:        0, // Starting Program Counter
+		memoryEnd: 0, // Memory end limit
 	}
 }
 
+// load loads the program into memory at a given address
 func (e *emulator) load(addr uint, program []string) {
 	for i, line := range program {
 		inst := instruction{
@@ -50,30 +58,31 @@ func (e *emulator) load(addr uint, program []string) {
 	e.memoryEnd = addr + uint(len(program))
 }
 
+// step executes one instruction at the current program counter
 func (e *emulator) step() error {
 	if e.pc >= e.memoryEnd {
 		return fmt.Errorf("program counter out of bounds")
 	}
 
-	// Decode current instruction
+	// Decode current instruction from memory
 	inst := e.memory[int(e.pc)]
 
-	// Execute based on instruction command
+	// Execute based on the instruction command
 	var err error
 	switch inst.command {
 	case "ADD":
-		err = e.executeADD(inst)
-		e.pc++
+		err = e.executeADD(inst) // Execute ADD instruction
+		e.pc++                   // Move to the next instruction
 	case "SBB":
-		err = e.executeSBB(inst)
+		err = e.executeSBB(inst) // Execute SBB instruction
 		e.pc++
 	case "ADOX":
-		err = e.executeADOX(inst)
+		err = e.executeADOX(inst) // Execute ADOX instruction
 		e.pc++
 	case "JMP":
-		err = e.executeJMP(inst)
+		err = e.executeJMP(inst) // Execute JMP instruction
 	case "JGE":
-		err = e.executeJGE(inst)
+		err = e.executeJGE(inst) // Execute JGE instruction
 	default:
 		err = fmt.Errorf("unknown instruction: %s", inst.command)
 	}
@@ -81,121 +90,136 @@ func (e *emulator) step() error {
 	return err
 }
 
+// executeADD implements the ADD operation and updates the flags
 func (e *emulator) executeADD(inst instruction) error {
-	// ADD rax, rbx  OR  ADD rax, 5
-	if len(inst.params) != 2 {
-		return errors.New("ADD requires 2 parameters")
-	}
-
-	dstReg := inst.params[0]
-	valueStr := inst.params[1]
-
-	value, err := e.getValueFromOperand(valueStr)
+	// Retrieve the operands (register or immediate value)
+	dest, err := e.getValueFromOperand(inst.params[0])
 	if err != nil {
-		return fmt.Errorf("ADD failed: %v", err)
+		return err
+	}
+	src, err := e.getValueFromOperand(inst.params[1])
+	if err != nil {
+		return err
 	}
 
-	if _, exists := e.registers[dstReg]; !exists {
-		return fmt.Errorf("unknown register: %s", dstReg)
-	}
+	// Perform addition
+	result := dest + src
 
-	e.registers[dstReg] += value
+	// Set flags
+	e.flags["ZF"] = (result == 0)                // Zero Flag
+	e.flags["SF"] = (result < 0)                 // Sign Flag
+	e.flags["CF"] = (result < dest)              // Carry Flag (unsigned overflow)
+	e.flags["OF"] = ((dest < 0) == (src < 0)) && // Overflow Flag (signed overflow)
+		(result < 0 != (dest < 0))
+
+	// Store the result back into the destination register
+	e.registers[inst.params[0]] = result
+
 	return nil
 }
 
+// executeSBB implements the SBB operation (subtract with borrow) and updates the flags
 func (e *emulator) executeSBB(inst instruction) error {
-	// SBB rax, rbx  OR  SBB rax, 5
-	if len(inst.params) != 2 {
-		return errors.New("SBB requires 2 parameters")
-	}
-
-	dstReg := inst.params[0]
-	valueStr := inst.params[1]
-
-	value, err := e.getValueFromOperand(valueStr)
+	// Retrieve the operands
+	dest, err := e.getValueFromOperand(inst.params[0])
 	if err != nil {
-		return fmt.Errorf("SBB failed: %v", err)
+		return err
+	}
+	src, err := e.getValueFromOperand(inst.params[1])
+	if err != nil {
+		return err
 	}
 
-	if _, exists := e.registers[dstReg]; !exists {
-		return fmt.Errorf("unknown register: %s", dstReg)
+	// Perform subtraction with borrow (borrow is 1 if CF is set)
+	borrow := 0
+	if e.flags["CF"] {
+		borrow = 1
 	}
+	result := dest - src - borrow
 
-	e.registers[dstReg] -= value
+	// Set flags
+	e.flags["ZF"] = (result == 0)                       // Zero Flag
+	e.flags["SF"] = (result < 0)                        // Sign Flag
+	e.flags["CF"] = (dest < src+borrow)                 // Carry Flag (unsigned borrow)
+	e.flags["OF"] = ((dest < 0) != (src+borrow < 0)) && // Overflow Flag
+		(result < 0 != (dest < 0))
+
+	// Store the result back into the destination register
+	e.registers[inst.params[0]] = result
+
 	return nil
 }
 
+// executeADOX implements the ADOX operation (unsigned addition) and updates only the OF flag
 func (e *emulator) executeADOX(inst instruction) error {
-	// ADOX rax, rbx  OR  ADOX rax, 5
-	if len(inst.params) != 2 {
-		return errors.New("ADOX requires 2 parameters")
-	}
-
-	dstReg := inst.params[0]
-	valueStr := inst.params[1]
-
-	value, err := e.getValueFromOperand(valueStr)
+	// Retrieve the operands
+	dest, err := e.getValueFromOperand(inst.params[0])
 	if err != nil {
-		return fmt.Errorf("ADOX failed: %v", err)
+		return err
+	}
+	src, err := e.getValueFromOperand(inst.params[1])
+	if err != nil {
+		return err
 	}
 
-	if _, exists := e.registers[dstReg]; !exists {
-		return fmt.Errorf("unknown register: %s", dstReg)
-	}
+	// Perform addition
+	result := dest + src
 
-	// ADOX - like ADD but also considers the overflow flag.
-	e.registers[dstReg] += value
-	// Overflow handling can be implemented here if necessary.
+	// Set Overflow Flag (OF)
+	e.flags["OF"] = (result < dest) // Only check unsigned overflow
+
+	// Store the result back into the destination register
+	e.registers[inst.params[0]] = result
+
 	return nil
 }
 
+// executeJMP implements the JMP operation (unconditional jump)
 func (e *emulator) executeJMP(inst instruction) error {
-	// JMP 10 (Jump to address 10)
-	if len(inst.params) != 1 {
-		return errors.New("JMP requires 1 parameter")
-	}
-
-	targetAddrStr := inst.params[0]
-	targetAddr, err := strconv.Atoi(targetAddrStr)
+	// Jump to the address specified by the operand
+	addr, err := e.getValueFromOperand(inst.params[0])
 	if err != nil {
-		return fmt.Errorf("invalid jump address: %w", err)
+		return err
 	}
 
-	e.pc = uint(targetAddr)
+	// Set the program counter to the new address
+	e.pc = uint(addr)
+
 	return nil
 }
 
+// executeJGE implements the JGE operation (jump if greater or equal)
 func (e *emulator) executeJGE(inst instruction) error {
-	// JGE 10 (Jump to address 10 if rax >= rbx)
-	if len(inst.params) != 1 {
-		return errors.New("JGE requires 1 parameter")
-	}
-
-	if e.registers["rax"] >= e.registers["rbx"] {
-		targetAddrStr := inst.params[0]
-		targetAddr, err := strconv.Atoi(targetAddrStr)
+	// Jump if SF == OF (greater or equal condition for signed numbers)
+	if e.flags["SF"] == e.flags["OF"] {
+		addr, err := e.getValueFromOperand(inst.params[0])
 		if err != nil {
-			return fmt.Errorf("invalid jump address: %w", err)
+			return err
 		}
-
-		e.pc = uint(targetAddr)
+		e.pc = uint(addr) // Set PC to the target address
+	} else {
+		// Otherwise, proceed to the next instruction
+		e.pc++
 	}
+
 	return nil
 }
 
-// getValueFromOperand обрабатывает операнд (регистры или целочисленные значения)
+// getValueFromOperand processes the operand (register or integer value)
 func (e *emulator) getValueFromOperand(operand string) (int, error) {
 	if value, err := strconv.Atoi(operand); err == nil {
-		// Это целое число
+		// Operand is an integer value
 		return value, nil
 	} else if value, exists := e.registers[operand]; exists {
-		// Это регистр
+		// Operand is a register
 		return value, nil
 	} else {
+		// Invalid operand
 		return 0, fmt.Errorf("invalid operand: %s", operand)
 	}
 }
 
+// printRegisters displays the current state of all registers
 func (e *emulator) printRegisters() {
 	fmt.Println("Registers:")
 	for reg, value := range e.registers {
@@ -203,6 +227,7 @@ func (e *emulator) printRegisters() {
 	}
 }
 
+// printMemory prints the memory content from a specific address and size
 func (e *emulator) printMemory(addr, size int) {
 	fmt.Println("Memory:")
 	for i := addr; i < addr+size; i++ {
@@ -210,6 +235,7 @@ func (e *emulator) printMemory(addr, size int) {
 	}
 }
 
+// printInstruction prints the instruction at a given memory address
 func (e *emulator) printInstruction(addr int) {
 	if inst, ok := e.memory[addr]; ok {
 		instString := fmt.Sprintf("%s ", inst.command)

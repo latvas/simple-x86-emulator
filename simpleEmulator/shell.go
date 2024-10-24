@@ -10,8 +10,6 @@ import (
 	"strings"
 )
 
-const readBufferSize = 4096
-
 type EmulatorShell struct {
 	emu emulator
 }
