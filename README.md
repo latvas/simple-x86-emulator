@@ -64,18 +64,52 @@ $ ./emulator
 Enter starting memory address:
 0
 Enter program instructions:
-ADD rax, 78
-SBB rcx, rdx
-ADOX
-JMP 5
-JGE 2
+ADD rax, 78         # Add 78 to rax
+SBB rcx, rdx        # Subtract with borrow: rcx = rcx - rdx - CF
+ADOX rbx, 10        # Add with overflow: rbx = rbx + 10 + OF
+JMP 5               # Jump to instruction at memory address 5
+JGE 2               # Jump to instruction 2 if the result was >= 0
 END
 Program loaded successfully.
 > print_memory(0, 5)
 Memory:
-Instruction at 0: ADD rax 228 
+Instruction at 0: ADD rax 78 
 Instruction at 1: SBB rcx rdx 
-Instruction at 2: ADOX 
+Instruction at 2: ADOX rbx 10 
 Instruction at 3: JMP 5 
 Instruction at 4: JGE 2
+
+> step()       # Execute ADD rax, 78 (rax should now be 78)
+> print_registers()
+Registers:
+rax: 78
+rbx: 0
+rcx: 0
+rdx: 0
+> step()       # Execute SBB rcx, rdx (rcx remains unchanged)
+> print_registers()
+Registers:
+rax: 78
+rbx: 0
+rcx: 0
+rdx: 0
+
+> step()       # Execute ADOX rbx, 10 (rbx should now be 10)
+> print_registers()
+Registers:
+rax: 78
+rbx: 10
+rcx: 0
+rdx: 0
+
+> step()       # Execute JMP 5 (program counter jumps to instruction 5)
+> step()       # Execute JGE 2 (if condition met, jumps to instruction 2)
+
+> print_registers()
+Registers:
+rax: 78
+rbx: 10
+rcx: 0
+rdx: 0
+
 ```
