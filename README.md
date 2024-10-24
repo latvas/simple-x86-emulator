@@ -1,8 +1,5 @@
 # simple-x86-emulator
 
-
-# x86-64 Emulator
-
 This project is a simplified emulator of a single-core x86-64 processor. It can load and execute a program consisting of a few specific instructions and provides an interactive shell to control the emulator. The project is implemented in Go.
 
 ## Features
